@@ -31,6 +31,13 @@ public final class PiService extends Service {
     private static final String CHANNEL = "pi-runtime";
     private Process nodeProcess;
     private PowerManager.WakeLock wakeLock;
+    private final android.os.Handler deviceInfoHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable updateDeviceInfo = new Runnable() {
+        @Override public void run() {
+            AndroidDeviceInfo.write(PiService.this);
+            deviceInfoHandler.postDelayed(this, 5000);
+        }
+    };
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
@@ -39,6 +46,8 @@ public final class PiService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForegroundWithNotification();
         acquireWakeLock();
+        deviceInfoHandler.removeCallbacks(updateDeviceInfo);
+        updateDeviceInfo.run();
         new Thread(() -> {
             try {
                 // drop stale port before anything else: a leftover file would
@@ -77,6 +86,7 @@ public final class PiService extends Service {
         env.put("LANG", "C.UTF-8");
         env.put("PI_WORKDIR", new File(files, "work").getAbsolutePath());
         env.put("PI_SHELL", new File(prefix, "bin/bash").getAbsolutePath());
+        env.put("PI_ANDROID_INFO", AndroidDeviceInfo.file(this).getAbsolutePath());
         // Termux-built openssl hardcodes /data/data/com.termux paths — point at ours.
         env.put("OPENSSL_CONF", new File(prefix, "etc/tls/openssl.cnf").getAbsolutePath());
         env.put("SSL_CERT_FILE", new File(prefix, "etc/tls/cert.pem").getAbsolutePath());
@@ -156,6 +166,7 @@ public final class PiService extends Service {
 
     @Override
     public void onDestroy() {
+        deviceInfoHandler.removeCallbacks(updateDeviceInfo);
         if (nodeProcess != null) nodeProcess.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();

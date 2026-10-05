@@ -20,10 +20,25 @@ public final class MainActivity extends Activity {
         webView = new WebView(this);
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
+        // Route target=_blank auth links through shouldOverrideUrlLoading.
+        webView.getSettings().setSupportMultipleWindows(false);
         webView.getSettings().setAllowFileAccess(false);
         webView.getSettings().setAllowContentAccess(false);
         webView.setWebChromeClient(new android.webkit.WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
+                android.net.Uri uri = request.getUrl();
+                // Keep the bridge in-app; OAuth must use the system browser, not an embedded login.
+                if ("http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost())) return false;
+                if ("https".equals(uri.getScheme())) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (android.content.ActivityNotFoundException ignored) { }
+                }
+                return true;
+            }
+
             @Override
             public void onReceivedError(WebView view, android.webkit.WebResourceRequest request,
                                         android.webkit.WebResourceError error) {

@@ -6,6 +6,7 @@
 /android/.gradle/
 /android/app/build/
 /android/app/src/main/assets/*.bin
+/android/app/src/main/assets/termux-packages.json
 /android/local.properties
 /android/.idea/
 /android/*.iml

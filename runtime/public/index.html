@@ -14,11 +14,33 @@
     </div>
   </header>
   <div id="session-bar">Session: <strong id="session-name">Main</strong></div>
+  <section id="login-bar">
+    <button id="chatgpt-login" type="button">ChatGPTでログイン</button>
+    <span id="login-status" role="status"></span>
+  </section>
+  <dialog id="login-dialog">
+    <h3>ChatGPTでログイン</h3>
+    <p id="login-message" role="status"></p>
+    <a id="login-browser" target="_blank" rel="noopener noreferrer" hidden>ブラウザでログイン</a>
+    <form id="login-response" hidden>
+      <label for="login-callback">自動で完了しない場合、ブラウザの最後のURLを貼り付けてください。</label>
+      <input id="login-callback" type="text" autocomplete="off" placeholder="http://127.0.0.1:1455/auth/callback…">
+      <button type="submit">URLを送信</button>
+    </form>
+    <div class="dlg-btns"><button id="login-close" type="button">キャンセル</button></div>
+  </dialog>
   <main id="chat"></main>
+  <section id="activity" hidden aria-label="エージェントの処理状況">
+    <span class="activity-spinner" aria-hidden="true"></span>
+    <span id="activity-label" role="status" aria-live="polite"></span>
+    <span id="activity-elapsed" aria-label="経過時間"></span>
+    <button id="activity-stop" type="button" aria-label="実行中の処理を停止">■ 停止</button>
+  </section>
   <form id="composer">
     <textarea id="input" rows="2" placeholder="Prompt…" autocomplete="off"></textarea>
     <button type="submit">➤</button>
   </form>
   <script type="module" src="app.js"></script>
+  <script type="module" src="login.js"></script>
 </body>
 </html>

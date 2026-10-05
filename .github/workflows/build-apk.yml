@@ -34,14 +34,10 @@ jobs:
       - name: Install runtime dependencies without lifecycle scripts
         working-directory: runtime
         run: npm ci --omit=dev --omit=optional --ignore-scripts
+      - name: Test login and conversation lifecycle
+        run: node --test runtime/test/*.test.mjs
       - name: Package JavaScript runtime
-        working-directory: runtime
-        run: |
-          find node_modules -type d -name .bin -prune -exec rm -rf {} +
-          find node_modules -type l ! -exec test -e {} \; -delete
-          tar czf ../android/app/src/main/assets/runtime.bin --transform 's,^,runtime/,' \
-            server.mjs remote-env.mjs env-server.mjs pi-serverd.mjs remote-client.mjs \
-            package.json package-lock.json public node_modules
+        run: python3 scripts/package-runtime.py
       - name: Build installable debug APK
         working-directory: android
         run: bash ./gradlew --no-daemon assembleDebug

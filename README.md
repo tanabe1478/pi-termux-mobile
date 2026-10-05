@@ -1,5 +1,8 @@
 # pi-termux-mobile
 
+Personal development fork: [tanabe1478/pi-termux-mobile](https://github.com/tanabe1478/pi-termux-mobile).
+Based on [badlogic/pi-termux-mobile](https://github.com/badlogic/pi-termux-mobile).
+
 > **Experimental software:** This is a personal prototype under active
 > development. Remote sessions, the embedded Termux runtime, and Android
 > background-process handling may still change or fail on individual devices.
@@ -20,10 +23,30 @@ The durable harness gives: SQLite-backed conversations
 conversations owned by the calling task), model selection per conversation,
 and per-conversation execution environments — including remote hosts.
 
+## Android device awareness
+
+On Android, `PiService` writes an atomic status snapshot every five seconds using
+native Android APIs. The read-only `android_device_info` tool reports model,
+Android version, battery percent/charging/power saver, and active network
+transport/internet validation. Snapshots older than 30 seconds are rejected.
+The system prompt explains the Android sandbox and directs the agent to use the
+tool rather than claiming all device information is inaccessible.
+
+The app requests `ACCESS_NETWORK_STATE` (normal permission). It does not collect
+SSID/IP addresses, location, account information or unique hardware identifiers.
+This tool does not change settings, capture the screen or access other apps'
+private files. A future self-improvement workflow needs scoped user-approved
+changes and rollback; native app updates still require rebuilding/installing an APK.
+
 ## App pages
 
 - **Chat** (`/`) — durable pi conversation (prompt, abort, new session,
-  model dropdown). `pi mobile` header links back here from every page.
+  model dropdown), plus **ChatGPTでログイン**. Tap it, open the browser link,
+  sign in with ChatGPT, then return to the app. The model list refreshes and
+  an OpenAI model is selected automatically. A full callback URL can be pasted
+  as a fallback. Login can be cancelled and times out after five minutes;
+  tokens stay in the private `auth.json`, never in browser storage.
+  `pi mobile` header links back here from every page.
 - **API keys** (`keys.html`) — provider key management (list/add/delete,
   stored as `~/.pi/agent/auth.json` in pi CLI format).
 - **Sessions** (`sessions.html`) — local durable-session browser: create a
@@ -126,6 +149,19 @@ the current repository, so later builds may bundle newer binaries. Device
 startup and Android background behavior still need testing on a real phone.
 
 ## Build
+
+Before the first build, generate the runtime assets (macOS/Linux; `dpkg`
+required for the Termux packages):
+
+```bash
+python3 scripts/package-rootfs.py
+(cd runtime && npm ci --omit=dev --omit=optional --ignore-scripts)
+node --test runtime/test/*.test.mjs
+python3 scripts/package-runtime.py
+```
+
+After changing runtime code, rerun `package-runtime.py` and increment
+`RUNTIME_VERSION` in `RuntimeInstaller.java` so installed apps extract the update.
 
 ```bash
 cd android

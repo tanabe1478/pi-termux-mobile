@@ -23,6 +23,9 @@ import { CodingTools } from '@earendil-works/pi-durable/tools';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { RemoteExecutionEnv } from './remote-env.mjs';
+import { createChatGPTLogin } from './chatgpt-login.mjs';
+import { snapshotFromView } from './public/conversation-state.js';
+import { androidDeviceExtension } from './android-device.mjs';
 
 const ctx = BACKGROUND_CONTEXT;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -106,6 +109,7 @@ const Subagent = defineExtension({
 let harness = null;
 let root = null;
 let eventStream = null;
+let conversationView = null;
 let localSessions = { sessions: {} };
 const sseClients = new Set();
 
@@ -142,7 +146,7 @@ async function pickModel() {
   try {
     const avail = await models.getAvailable();
     console.log('pickModel: available =', avail.length);
-    const m = avail[0];
+    const m = avail.find((model) => model.provider === 'openai' && model.id === 'gpt-6.1-sol') ?? avail[0];
     if (m) return { provider: m.provider, modelId: m.id };
   } catch (e) { console.error('pickModel:', e); }
   return undefined;
@@ -160,9 +164,11 @@ async function saveLocalSessions() {
 }
 async function watchConversation(conversation) {
   if (eventStream) { try { await eventStream.stop(); } catch {} }
+  conversationView?.dispose();
   root = conversation;
+  conversationView = await root.viewState(ctx);
   eventStream = await watchEvents(harness, root.id, ctx);
-  broadcast({ type: 'bridge_snapshot', snapshot: eventStream.snapshot });
+  broadcast({ type: 'bridge_snapshot', snapshot: snapshotFromView(conversationView.value) });
   eventStream.start(async (events) => { for (const e of events) broadcast(e); });
 }
 
@@ -170,14 +176,15 @@ async function initHarness() {
   const registry = createRegistry();
   registry.install(CodingTools);
   registry.install(Subagent);
+  if (process.env.PI_ANDROID_INFO) registry.install(androidDeviceExtension(process.env.PI_ANDROID_INFO));
   const storage = await openNodeSqliteStorage(path.join(STATE_DIR, 'harness.sqlite'));
   harness = await Harness.open(storage, { models, registry, env: envFor }, ctx);
   root = await harness.root(ctx, { agent: { model: await pickModel() } });
   // root() only applies `agent` on first creation — configure explicitly so
   // restarts against existing storage also get a model.
   try {
-    const view = await root.viewState(ctx);
-    if (!view?.value?.agent?.model) {
+    const agent = await root.agent(ctx);
+    if (!agent.model) {
       const m = await pickModel();
       if (m) await root.configure({ model: m }, ctx);
     }
@@ -197,14 +204,33 @@ async function setApiKey(provider, key) {
   // If the root conversation has no usable model yet, pick one now.
   if (root) {
     try {
-      const view = await root.viewState(ctx);
-      if (!view?.value?.agent?.model) {
+      const agent = await root.agent(ctx);
+      if (!agent.model) {
         const m = await pickModel();
         if (m) await root.configure({ model: m }, ctx);
       }
     } catch {}
   }
 }
+
+// A stable installation identity is required by OpenAI's ChatGPT OAuth flow.
+const DEVICE_ID_FILE = path.join(STATE_DIR, 'device-id');
+await mkdir(STATE_DIR, { recursive: true });
+const deviceId = existsSync(DEVICE_ID_FILE)
+  ? (await readFile(DEVICE_ID_FILE, 'utf8')).trim() : crypto.randomUUID();
+await writeFile(DEVICE_ID_FILE, deviceId, { mode: 0o600 });
+const chatGPTLogin = createChatGPTLogin({
+  login: (interaction) => models.login('openai', 'oauth', interaction, {
+    getDeviceId: () => deviceId,
+  }),
+  onSuccess: async () => {
+    await models.refresh();
+    const available = await models.getAvailable();
+    const m = available.find((model) => model.provider === 'openai' && model.id === 'gpt-6.1-sol')
+      ?? available.find((model) => model.provider === 'openai');
+    if (root && m) await root.configure({ model: { provider: m.provider, modelId: m.id } }, ctx);
+  },
+});
 
 const token = existsSync(TOKEN_FILE)
   ? (await readFile(TOKEN_FILE, 'utf8')).trim()
@@ -238,7 +264,7 @@ const server = http.createServer(async (req, res) => {
     if (!authed(req)) return json(res, 401, { error: 'unauthorized' });
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
     res.write(`data: ${JSON.stringify({ type: 'bridge_connected' })}\n\n`);
-    if (eventStream) res.write(`data: ${JSON.stringify({ type: 'bridge_snapshot', snapshot: eventStream.snapshot })}\n\n`);
+    if (conversationView) res.write(`data: ${JSON.stringify({ type: 'bridge_snapshot', snapshot: snapshotFromView(conversationView.value) })}\n\n`);
     sseClients.add(res);
     req.on('close', () => sseClients.delete(res));
     return;
@@ -249,11 +275,10 @@ const server = http.createServer(async (req, res) => {
     const body = req.method === 'POST' ? await readBody(req) : {};
     try {
       if (p === '/api/state') {
-        const snap = eventStream?.snapshot;
-        const view = root ? await root.viewState(ctx) : null;
+        const snap = conversationView ? snapshotFromView(conversationView.value) : null;
         return json(res, 200, {
-          model: snap?.agent?.model ?? view?.value?.agent?.model ?? null,
-          busy: Boolean(snap?.run ?? view?.value?.live?.run ?? view?.value?.live),
+          model: snap?.agent?.model ?? null,
+          busy: Boolean(snap?.run),
           cwd: WORKDIR,
           sessionId: root?.id ?? null,
           sessionName: localSessions.sessions[root?.id]?.name ?? 'Main',
@@ -301,14 +326,14 @@ const server = http.createServer(async (req, res) => {
         if (!root) await initHarness();
         // ensure a model is configured before submitting
         try {
-          const view = await root.viewState(ctx);
-          if (!view?.value?.agent?.model) {
+          const agent = await root.agent(ctx);
+          if (!agent.model) {
             const m = await pickModel();
             if (!m) return json(res, 400, { error: 'no model: set an API key first' });
             await root.configure({ model: m }, ctx);
             console.log('auto-configured model:', m.provider + '/' + m.modelId);
           }
-        } catch (e) { console.error('model check:', e?.message || e); }
+        } catch { return json(res, 500, { error: 'モデル設定を確認できませんでした。' }); }
         const sub = await root.submit({
           type: 'input',
           content: String(body.message || ''),
@@ -331,8 +356,7 @@ const server = http.createServer(async (req, res) => {
       if (p === '/api/model' && req.method === 'POST') {
         if (!body.provider || !body.modelId) return json(res, 400, { error: 'provider+modelId required' });
         await root.configure({ model: { provider: body.provider, modelId: body.modelId } }, ctx);
-        const check = await root.viewState(ctx);
-        const applied = check?.value?.agent?.model;
+        const applied = (await root.agent(ctx)).model;
         console.log('model set ->', JSON.stringify(applied));
         return json(res, 200, { ok: true, applied });
       }
@@ -432,6 +456,23 @@ const server = http.createServer(async (req, res) => {
       if (p === '/api/remote/disconnect' && req.method === 'POST') {
         await remoteState.disconnect();
         return json(res, 200, { ok: true });
+      }
+      if (p === '/api/login/chatgpt' && req.method === 'POST') {
+        return json(res, 200, chatGPTLogin.start());
+      }
+      if (p === '/api/login/chatgpt' && req.method === 'GET') {
+        return json(res, 200, chatGPTLogin.state());
+      }
+      if (p === '/api/login/chatgpt/cancel' && req.method === 'POST') {
+        chatGPTLogin.cancel();
+        return json(res, 200, { ok: true });
+      }
+      if (p === '/api/login/chatgpt/respond' && req.method === 'POST') {
+        if (typeof body.answer !== 'string' || body.answer.length > 8192) {
+          return json(res, 400, { error: 'invalid response' });
+        }
+        const ok = chatGPTLogin.respond(body.id, body.promptId, body.answer);
+        return json(res, ok ? 200 : 409, { ok });
       }
       if (p === '/api/auth' && req.method === 'POST') {
         if (!body.provider) return json(res, 400, { error: 'provider required' });
