@@ -50,6 +50,7 @@ dialog {
 }
 dialog::backdrop { background: rgba(0,0,0,.6); }
 #login-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+#login-bar[hidden] { display: none; }
 #login-status { font-size: 12px; color: #9a9aa5; }
 #login-dialog { margin: auto; width: min(92vw, 420px); max-height: 85vh; overflow-y: auto; }
 #login-message { margin-bottom: 12px; font-size: 14px; }
@@ -138,6 +139,16 @@ body.term-page { overflow: hidden; }
 #menu a:active { background: #2a2a34; }
 header { position: relative; }
 
+#github-page { flex: 1; overflow-y: auto; padding: 16px; font-size: 14px; }
+#github-page h2 { font-size: 17px; margin: 12px 0; }
+#github-page p, #github-page ol { margin: 12px 0; line-height: 1.6; }
+#github-page ol { padding-left: 22px; }
+#github-page a { color: #9ad0ff; }
+#github-form { display: flex; flex-direction: column; gap: 10px; }
+#github-token { background: #101014; color: #e4e4e8; border: 1px solid #2a2a35; border-radius: 6px; padding: 12px; font-size: 15px; }
+#github-save { background: #274bdb; min-height: 44px; }
+#github-disconnect { color: #ffb4b4; min-height: 44px; }
+#github-message { overflow-wrap: anywhere; }
 #keys-page { padding: 16px; }
 #keys-page h2 { font-size: 15px; color: #9a9aa5; margin: 14px 0 8px; }
 .key-row {

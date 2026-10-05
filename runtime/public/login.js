@@ -1,6 +1,7 @@
 const token = new URLSearchParams(location.search).get('token') || localStorage.getItem('pi-token') || '';
 const endpoint = '/api/login/chatgpt';
 const button = document.getElementById('chatgpt-login');
+const bar = document.getElementById('login-bar');
 const dialog = document.getElementById('login-dialog');
 const message = document.getElementById('login-message');
 const status = document.getElementById('login-status');
@@ -10,6 +11,8 @@ const input = document.getElementById('login-callback');
 const close = document.getElementById('login-close');
 let current = null;
 let timer = null;
+let authenticated = false;
+let notifiedLoginId = null;
 
 async function request(path = endpoint, body) {
   const res = await fetch(path, {
@@ -22,6 +25,9 @@ async function request(path = endpoint, body) {
 }
 function render(state) {
   current = state;
+  if (typeof state.authenticated === 'boolean') authenticated = state.authenticated;
+  else if (state.status === 'done') authenticated = true;
+  bar.hidden = authenticated;
   const pending = state.status === 'pending';
   button.disabled = pending;
   message.textContent = state.message || '';
@@ -35,7 +41,8 @@ function render(state) {
     else browser.hidden = true;
   } else browser.removeAttribute('href');
   form.hidden = !state.prompt;
-  if (state.status === 'done') {
+  if (state.status === 'done' && notifiedLoginId !== state.id) {
+    notifiedLoginId = state.id;
     input.value = '';
     window.dispatchEvent(new Event('chatgpt-authenticated'));
   }
@@ -52,14 +59,16 @@ async function poll() {
     if (current?.status === 'pending') timer = setTimeout(poll, 3000);
   }
 }
-button.addEventListener('click', async () => {
+async function startLogin() {
   button.disabled = true;
   input.value = '';
   if (!dialog.open) dialog.showModal();
   message.textContent = 'ログインを準備しています…';
   try { render(await request(endpoint, {})); await poll(); }
   catch (error) { message.textContent = error.message; button.disabled = false; }
-});
+}
+button.addEventListener('click', startLogin);
+window.addEventListener('open-chatgpt-login', startLogin);
 async function dismiss() {
   try {
     if (current?.status === 'pending') await request(`${endpoint}/cancel`, {});
@@ -84,5 +93,10 @@ form.addEventListener('submit', async (event) => {
 window.addEventListener('focus', poll);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 request().then((state) => {
-  if (state.status === 'pending') { dialog.showModal(); render(state); poll(); }
-}).catch(() => {});
+  render(state);
+  if (state.status === 'pending') { dialog.showModal(); poll(); }
+  else if (location.hash === '#chatgpt-login') { history.replaceState(null, '', location.pathname + location.search); startLogin(); }
+}).catch(() => {
+  bar.hidden = false;
+  status.textContent = '認証状態を確認できませんでした。';
+});

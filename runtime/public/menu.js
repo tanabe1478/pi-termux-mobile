@@ -28,6 +28,8 @@ export function renderMenu() {
   menu.innerHTML = `
     <a href="${q('/')}" data-pg="chat">Chat</a>
     <a href="${q('/keys.html')}" data-pg="keys">API keys</a>
+    <a href="${q('/github.html')}" data-pg="github">GitHub</a>
+    <a href="${q('/')}#chatgpt-login" id="menu-chatgpt">ChatGPT認証</a>
     <a href="${q('/sessions.html')}" data-pg="sessions">Sessions</a>
     <a href="${q('/clients.html')}" data-pg="clients">Clients</a>
     <a href="${q('/remote.html')}" data-pg="remote">Remote</a>
@@ -44,6 +46,12 @@ export function renderMenu() {
     menu.classList.toggle('hidden');
   });
   document.addEventListener('click', () => menu.classList.add('hidden'));
+  menu.querySelector('#menu-chatgpt').addEventListener('click', (e) => {
+    if (page === 'chat') {
+      e.preventDefault();
+      window.dispatchEvent(new Event('open-chatgpt-login'));
+    }
+  });
   menu.querySelector('#menu-ssh').addEventListener('click', (e) => {
     e.preventDefault();
     const target = prompt('ssh target (user@host[:port], pi must be installed there):',

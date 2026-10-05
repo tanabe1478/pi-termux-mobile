@@ -17,7 +17,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { builtinProviders } from '@earendil-works/pi-ai/providers/all';
 import {
   AssistantEntry, configure, createRegistry, defineExtension, defineTool,
-  Harness, watchEvents,
+  Harness, watchEvents, section,
 } from '@earendil-works/pi-durable';
 import { CodingTools } from '@earendil-works/pi-durable/tools';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
@@ -26,6 +26,7 @@ import { RemoteExecutionEnv } from './remote-env.mjs';
 import { createChatGPTLogin } from './chatgpt-login.mjs';
 import { snapshotFromView } from './public/conversation-state.js';
 import { androidDeviceExtension } from './android-device.mjs';
+import { githubStatus, saveGitHubToken, deleteGitHubToken, installGitAskpass, githubGitEnv } from './github-auth.mjs';
 
 const ctx = BACKGROUND_CONTEXT;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,8 @@ const HOME_DIR = process.env.HOME || ROOT;
 const WORKDIR = process.env.PI_WORKDIR || HOME_DIR;
 const AGENT_DIR = path.join(HOME_DIR, '.pi', 'agent');
 const AUTH_PATH = path.join(AGENT_DIR, 'auth.json');
+const GITHUB_AUTH_PATH = path.join(AGENT_DIR, 'github.json');
+const GITHUB_ASKPASS = path.join(AGENT_DIR, 'git-askpass.mjs');
 const STATE_DIR = path.join(HOME_DIR, '.pi-mobile');
 const PORT_FILE = path.join(STATE_DIR, 'port');
 const TOKEN_FILE = path.join(STATE_DIR, 'token');
@@ -129,9 +132,14 @@ function envFor({ cwd } = {}) {
   const prefix = process.env.PREFIX;
   const bash = prefix && existsSync(path.join(prefix, 'bin/bash'))
     ? path.join(prefix, 'bin/bash') : undefined;
-  const shellEnv = prefix
-    ? { ...process.env, PATH: `${prefix}/bin:/system/bin:${process.env.PATH || ''}` }
-    : undefined;
+  const shellEnv = {
+    ...process.env, ...githubGitEnv(GITHUB_ASKPASS),
+    ...(prefix ? {
+      PATH: `${prefix}/bin:/system/bin:${process.env.PATH || ''}`,
+      GIT_SSL_CAINFO: path.join(prefix, 'etc/tls/cert.pem'),
+      GIT_EXEC_PATH: path.join(prefix, 'libexec/git-core'),
+    } : {}),
+  };
   return new NodeExecutionEnv({
     cwd: dir,
     shellPath: process.env.PI_SHELL || bash,
@@ -176,6 +184,15 @@ async function initHarness() {
   const registry = createRegistry();
   registry.install(CodingTools);
   registry.install(Subagent);
+  registry.install(defineExtension({
+    name: 'github-access',
+    sections: [section('github_access', async () => {
+      const auth = await githubStatus(GITHUB_AUTH_PATH);
+      return auth.connected
+        ? `GitHub HTTPS git authentication is configured for ${auth.user}. Use normal https://github.com/OWNER/REPO.git URLs with git; GIT_ASKPASS supplies the credential. Never put tokens in commands, URLs, chat or git config, or read/display credential files. Ask permission before pushing changes. Repository access depends on the token's selected repositories and permissions.`
+        : 'GitHub authentication is not configured. For private clone/push, ask the user to register a token in the app menu → GitHub. Never ask them to paste tokens into chat.';
+    })],
+  }));
   if (process.env.PI_ANDROID_INFO) registry.install(androidDeviceExtension(process.env.PI_ANDROID_INFO));
   const storage = await openNodeSqliteStorage(path.join(STATE_DIR, 'harness.sqlite'));
   harness = await Harness.open(storage, { models, registry, env: envFor }, ctx);
@@ -461,7 +478,16 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, chatGPTLogin.start());
       }
       if (p === '/api/login/chatgpt' && req.method === 'GET') {
-        return json(res, 200, chatGPTLogin.state());
+        const credential = await credentialStore.read('openai');
+        return json(res, 200, { ...chatGPTLogin.state(), authenticated: credential?.type === 'oauth' });
+      }
+      if (p === '/api/github' && req.method === 'GET') {
+        return json(res, 200, await githubStatus(GITHUB_AUTH_PATH));
+      }
+      if (p === '/api/github' && req.method === 'POST') {
+        const result = body.delete ? await deleteGitHubToken(GITHUB_AUTH_PATH)
+          : await saveGitHubToken(GITHUB_AUTH_PATH, body.token);
+        return json(res, 200, result);
       }
       if (p === '/api/login/chatgpt/cancel' && req.method === 'POST') {
         chatGPTLogin.cancel();
@@ -578,7 +604,9 @@ function startPty(ws, url) {
     inner = `stty cols ${cols} rows ${rows}; exec "${process.execPath}" "${cli}"`;
   }
   const child = spawn(scriptBin, ['-qfec', inner, '/dev/null'], {
-    env: { ...process.env, TERM: 'xterm-256color', COLUMNS: String(cols), LINES: String(rows) },
+    env: { ...process.env, ...githubGitEnv(GITHUB_ASKPASS),
+      GIT_SSL_CAINFO: `${prefix}/etc/tls/cert.pem`, GIT_EXEC_PATH: `${prefix}/libexec/git-core`,
+      TERM: 'xterm-256color', COLUMNS: String(cols), LINES: String(rows) },
     cwd: WORKDIR,
   });
   child.stdout.on('data', (d) => { if (ws.readyState === 1) ws.send(d); });
@@ -619,6 +647,7 @@ function startPty(ws, url) {
 }
 
 await mkdir(WORKDIR, { recursive: true });
+await installGitAskpass(process.execPath, GITHUB_AUTH_PATH, GITHUB_ASKPASS);
 try { await initHarness(); } catch (e) { console.error('initHarness:', e?.message || e); }
 server.listen(Number(process.env.PI_PORT || 0), '127.0.0.1', async () => {
   const port = server.address().port;

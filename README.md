@@ -38,6 +38,22 @@ This tool does not change settings, capture the screen or access other apps'
 private files. A future self-improvement workflow needs scoped user-approved
 changes and rollback; native app updates still require rebuilding/installing an APK.
 
+## GitHub authentication
+
+Use **Menu → GitHub** to register a fine-grained PAT. Choose only the repositories
+you intend to develop, with Contents read/write for clone and push (read-only
+for clone). Workflow changes or organization policies may require additional
+permissions/approval. The app validates the token against GitHub's `/user` API;
+this does not guarantee access to every repository or operation.
+
+The credential is stored in the app-private `~/.pi/agent/github.json` with mode
+0600, never in localStorage, remote URLs or git config. Local coding tools and
+the Pi CLI use a GitHub-only executable `GIT_ASKPASS` script. No token is copied
+from the Mac. Use normal HTTPS GitHub URLs; SSH authentication remains separate.
+Logout deletes the local credential; revoke it on GitHub to invalidate it.
+The token is not encrypted by this implementation and trusted shell/code inside
+the app sandbox can read private app files. Grant minimal repository permissions.
+
 ## App pages
 
 - **Chat** (`/`) — durable pi conversation (prompt, abort, new session,
@@ -46,7 +62,11 @@ changes and rollback; native app updates still require rebuilding/installing an 
   an OpenAI model is selected automatically. A full callback URL can be pasted
   as a fallback. Login can be cancelled and times out after five minutes;
   tokens stay in the private `auth.json`, never in browser storage.
+  The login bar is hidden when an OpenAI OAuth credential is stored; reconnect
+  via **Menu → ChatGPT認証**. Expired access tokens are refreshed by pi-ai.
   `pi mobile` header links back here from every page.
+- **GitHub** (`github.html`) — validate/register a scoped PAT, show the connected
+  account, and delete the saved credential.
 - **API keys** (`keys.html`) — provider key management (list/add/delete,
   stored as `~/.pi/agent/auth.json` in pi CLI format).
 - **Sessions** (`sessions.html`) — local durable-session browser: create a

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>pi mobile — GitHub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="github">
+  <header><div id="menubar"><span>GitHub</span></div></header>
+  <main id="github-page">
+    <h2>GitHub認証</h2>
+    <p id="github-status" role="status">確認しています…</p>
+    <p>スマホ内のgitで、非公開リポジトリのcloneやpushに使います。SSH認証とは別です。</p>
+    <form id="github-form">
+      <label for="github-token">Fine-grained personal access token</label>
+      <input id="github-token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="GitHubトークン" required>
+      <button id="github-save" type="submit">認証して保存</button>
+    </form>
+    <p id="github-message" role="status"></p>
+    <button id="github-disconnect" type="button" hidden>保存した認証を削除</button>
+    <h2>トークンの作成</h2>
+    <ol>
+      <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHubでfine-grained PATを作成</a></li>
+      <li>有効期限と、開発したいリポジトリだけを指定</li>
+      <li>Repository permissionsの<strong>Contents: Read and write</strong>を許可（cloneのみならRead-only）</li>
+      <li>発行したトークンを上の専用欄へ入力</li>
+    </ol>
+    <p>組織によっては承認が必要です。認証成功は、すべてのリポジトリや操作へのアクセスを保証しません。ワークフローの編集などには追加の権限が必要です。</p>
+    <p>トークンはアプリの私有領域に保存します。チャット・URL・リポジトリには貼り付けないでください。「削除」は端末内の保存を削除するだけです。失効はGitHubの設定から行ってください。</p>
+  </main>
+  <script type="module" src="github.js"></script>
+</body>
+</html>
