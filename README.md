@@ -23,6 +23,41 @@ The durable harness gives: SQLite-backed conversations
 conversations owned by the calling task), model selection per conversation,
 and per-conversation execution environments — including remote hosts.
 
+## On-demand command-line tools
+
+Chat and pi CLI share the app's Android command environment. `pi-pkg` adds
+Termux ARM64 packages on the phone when needed; `gh` is **not bundled** in the APK.
+
+```bash
+pi-pkg list
+pi-pkg plan gh
+# After approval:
+pi-pkg install gh --yes
+# Uses the GitHub credential saved in the app:
+gh api user --jq .login
+gh repo list --limit 20 --json nameWithOwner,isPrivate
+```
+
+The installer downloads the official HTTPS package index, resolves concrete
+dependencies, verifies each package's size and SHA-256, and records added packages
+in `~/.pi-mobile/packages.json`. Existing packages/files are never upgraded or
+overwritten. Downloads and destinations are validated before extraction; ordinary
+install failures remove newly written files. Script shebangs and internal symlinks
+are relocated to the app prefix.
+
+This is a limited, additive CLI installer, **not a full apt/dpkg environment**.
+It does not execute package maintainer scripts, support every archive/virtual
+package, or fix arbitrary hard-coded native paths. Packages requiring such setup
+may not work. Interrupted installs can leave a lock/partial files; inspect those
+before retrying. Index trust is HTTPS plus index checksums, not an independent
+APT-signature verification. Normal Linux/glibc binaries are not interchangeable
+with Android binaries.
+
+After installing `gh`, an app launcher supplies the saved PAT only to its child
+process. It restricts hosts and disables token-display commands; the token is not
+put into chat, command arguments, or git config. This is accidental-disclosure
+protection, not isolation from trusted shell/code in the app sandbox.
+
 ## Android device awareness
 
 On Android, `PiService` writes an atomic status snapshot every five seconds using
@@ -48,8 +83,9 @@ this does not guarantee access to every repository or operation.
 
 The credential is stored in the app-private `~/.pi/agent/github.json` with mode
 0600, never in localStorage, remote URLs or git config. Local coding tools and
-the Pi CLI use a GitHub-only executable `GIT_ASKPASS` script. No token is copied
-from the Mac. Use normal HTTPS GitHub URLs; SSH authentication remains separate.
+the Pi CLI use a GitHub-only executable `GIT_ASKPASS` script; on-demand `gh`
+automatically uses the same saved credential. The app does not automatically
+copy credentials from the Mac; explicit user-authorized provisioning is separate. Use normal HTTPS GitHub URLs; SSH authentication remains separate.
 Logout deletes the local credential; revoke it on GitHub to invalidate it.
 The token is not encrypted by this implementation and trusted shell/code inside
 the app sandbox can read private app files. Grant minimal repository permissions.

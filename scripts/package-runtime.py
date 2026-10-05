@@ -20,7 +20,11 @@ def main():
     runtime = ROOT / "runtime"
     if not (runtime / "node_modules").is_dir():
         raise SystemExit("Run npm ci --omit=dev --omit=optional --ignore-scripts in runtime first")
+    manifest = ASSETS / "termux-packages.json"
+    if not manifest.is_file():
+        raise SystemExit("Run scripts/package-rootfs.py first to generate the baseline package manifest")
     with tarfile.open(ASSETS / "runtime.bin", "w:gz", format=tarfile.USTAR_FORMAT) as archive:
+        archive.add(manifest, arcname="runtime/termux-packages.json")
         for file in sorted(runtime.glob("*.mjs")):
             archive.add(file, arcname="runtime/" + file.name, filter=include)
         for name in ("package.json", "package-lock.json", "public", "node_modules"):

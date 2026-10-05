@@ -23,4 +23,5 @@ This is tanabe1478's personal Android agent application.
 - Read device conversations only when needed and authorized. Do not send personal device data to GitHub.
 - Device state is a native, read-only, timestamped snapshot. It currently exposes model/OS, battery and network flags, not location, SSID, IP, identifiers or other apps' private data.
 - Do not grant ADB/root privileges or change Android security/battery/system settings without specific user approval.
+- Prefer standard CLIs/scripts over per-feature tools. Use `pi-pkg plan PACKAGE` and obtain approval before `pi-pkg install PACKAGE --yes`. `gh` uses the saved app credential; do not run token-display commands. The additive installer is not a complete apt/dpkg environment and does not execute maintainer scripts.
 - Self-improvement must distinguish runtime extension changes from APK/native updates. System writes need scoped capabilities, visible approval, verification and a rollback plan.

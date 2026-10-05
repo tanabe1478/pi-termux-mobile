@@ -27,6 +27,7 @@ import { createChatGPTLogin } from './chatgpt-login.mjs';
 import { snapshotFromView } from './public/conversation-state.js';
 import { androidDeviceExtension } from './android-device.mjs';
 import { githubStatus, saveGitHubToken, deleteGitHubToken, installGitAskpass, githubGitEnv } from './github-auth.mjs';
+import { installPackageCLI } from './cli-bootstrap.mjs';
 
 const ctx = BACKGROUND_CONTEXT;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -184,12 +185,21 @@ async function initHarness() {
   const registry = createRegistry();
   registry.install(CodingTools);
   registry.install(Subagent);
+  if (process.env.PREFIX) registry.install(defineExtension({
+    name: 'local-cli-environment',
+    sections: [section('local_cli_environment', () => `You have bash on Android and may create scripts and use command-line tools; prefer existing CLIs to requesting app-specific tools.
+Use pi-pkg list to inspect installed packages and pi-pkg plan PACKAGE to review Termux ARM64 package dependencies. After the user approves installation, use pi-pkg install PACKAGE --yes.
+This installer only adds packages from the official Termux HTTPS repository after size/SHA-256 verification. It never upgrades or overwrites existing runtime files, and does not execute maintainer scripts. Some packages need unsupported setup; explain failures instead of claiming every Linux tool will work.
+Do not use apt/pkg as if this were a complete Termux installation. Native Linux/glibc binaries are not Android binaries.
+Installing gh makes GitHub CLI available in both Chat and pi CLI. It automatically uses the app's saved GitHub credential. Use gh api user --jq .login to verify, and gh repo list or gh api user/repos to list authenticated repositories, including private repositories allowed by the token. Do not fall back to public API results without clearly distinguishing them.
+Never display credentials, use gh auth token/--show-token, or read credential files. Ask approval before package installation, remote writes, pushes, and changes outside the requested project.`)],
+  }));
   registry.install(defineExtension({
     name: 'github-access',
     sections: [section('github_access', async () => {
       const auth = await githubStatus(GITHUB_AUTH_PATH);
       return auth.connected
-        ? `GitHub HTTPS git authentication is configured for ${auth.user}. Use normal https://github.com/OWNER/REPO.git URLs with git; GIT_ASKPASS supplies the credential. Never put tokens in commands, URLs, chat or git config, or read/display credential files. Ask permission before pushing changes. Repository access depends on the token's selected repositories and permissions.`
+        ? `GitHub authentication is configured for ${auth.user}. If gh is installed, use gh repo list or gh api user/repos for authenticated repository discovery; do not substitute unauthenticated public API results. If gh is missing, review pi-pkg plan gh and request installation approval. Use normal https://github.com/OWNER/REPO.git URLs with git; GIT_ASKPASS supplies the credential. Never put tokens in commands, URLs, chat or git config, or read/display credential files. Ask permission before pushing changes. Repository access depends on the token's selected repositories and permissions.`
         : 'GitHub authentication is not configured. For private clone/push, ask the user to register a token in the app menu → GitHub. Never ask them to paste tokens into chat.';
     })],
   }));
@@ -648,6 +658,7 @@ function startPty(ws, url) {
 
 await mkdir(WORKDIR, { recursive: true });
 await installGitAskpass(process.execPath, GITHUB_AUTH_PATH, GITHUB_ASKPASS);
+if (process.env.PREFIX) await installPackageCLI(process.env.PREFIX, HOME_DIR, ROOT);
 try { await initHarness(); } catch (e) { console.error('initHarness:', e?.message || e); }
 server.listen(Number(process.env.PI_PORT || 0), '127.0.0.1', async () => {
   const port = server.address().port;
